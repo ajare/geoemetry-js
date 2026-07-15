@@ -56,7 +56,7 @@ The public API is exported from `src/index.js`.
 npm test
 ```
 
-Current test status: 11 passing tests covering core mesh creation, triangulation, helpers, filters, serialization, splitting, cutting, bridging, extrusion, offsetting, and basic polygon algorithms.
+Current test status: 13 passing tests covering core mesh creation, hole-aware triangulation, helpers, filters, serialization, splitting, cutting, bridging, extrusion, offsetting, and basic polygon algorithms.
 
 ## Run the editor app locally
 
@@ -123,7 +123,7 @@ Repository Pages settings should use **GitHub Actions** as the Pages source.
 ## Current known limitations / bugs
 
 - `Mesh.clone()` does not currently clone root `attributes` or the `vertexAttributes`, `edgeAttributes`, `polygonAttributes`, and `polygonVertexAttributes` collections. Cloned meshes can lose user data stored through those APIs.
-- Polygon holes are tracked in topology, but `Polygon.triangulate()` triangulates the outer loop only. Triangulation display/output does not subtract holes.
+- Hole-aware triangulation is implemented for simple polygons with simple holes, but it is still a lightweight in-repo implementation rather than a fully robust constrained triangulation library.
 - CSG-style helpers are approximate. For example, `MeshUtils.unionPolygons()` and `mergePolygonsByEdge()` use convex hull behavior rather than full robust polygon boolean operations.
 - Many geometry operations assume simple, non-self-intersecting polygons and do limited validation before mutating topology.
 - `MeshValidator.validate()` currently checks only basic missing references. It does not yet validate winding, duplicate vertices, self-intersections, non-manifold edges, hole containment, or polygon orientation.
@@ -132,7 +132,7 @@ Repository Pages settings should use **GitHub Actions** as the Pages source.
 ## To-dos / recommendations
 
 - Add tests for attribute cloning and serialization of user attributes.
-- Decide whether holes should be triangulated/rendered as true holes, then implement a hole-aware triangulation strategy.
+- Add more triangulation tests for multiple holes, concave outer polygons, concave holes, and edge cases with nearly collinear vertices.
 - Expand `MeshValidator` to catch topology and geometry invariants.
 - Document operation preconditions, especially for split, cut, bridge, extrusion, and merge operations.
 - Consider replacing convex-hull approximations with robust polygon boolean operations if true CSG behavior is required.

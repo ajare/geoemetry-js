@@ -64,7 +64,13 @@ export class Polygon extends DirectedEdgeLoop {
   invalidate() { this._triangles = null; }
   bounds(mesh) { return new BoundingBox(this.vertices(mesh)); }
   pointInside(mesh, point) { if (!this.containsPoint(mesh, point)) return false; return !this.holes.some(h => mesh.polygons.get(h)?.containsPoint(mesh, point)); }
-  triangulate(mesh) { if (this._triangles) return this._triangles.map(t => [...t]); const indices = this.vertexIndices(); const points = indices.map(i => mesh.vertices.get(i).position); this._triangles = triangulateSimplePolygon(points).map(t => t.map(i => indices[i])); return this._triangles.map(t => [...t]); }
+  triangulate(mesh) {
+    if (this._triangles) return this._triangles.map(t => [...t]);
+    this._triangles = this.holes.length
+      ? triangulatePolygonWithHoles(mesh, this)
+      : triangulateLoop(mesh, this.vertexIndices());
+    return this._triangles.map(t => [...t]);
+  }
   getPublicId() { return this.publicId; }
   isHole() { return this.hole; }
   convertToHole() { this.hole = true; return this; }
@@ -74,6 +80,152 @@ export class Polygon extends DirectedEdgeLoop {
   getTriangulationVertexIndices(triangleIndex, mesh) { return this.triangulate(mesh)[triangleIndex]; }
 }
 
+function triangulateLoop(mesh, vertexIds) {
+  const points = vertexIds.map(i => mesh.vertices.get(i).position);
+  return triangulateSimplePolygon(points)
+    .map(t => t.map(i => vertexIds[i]))
+    .filter(t => new Set(t).size === 3 && Math.abs(triangleArea(mesh, t)) > MathsUtils.Epsilon);
+}
+
+function triangulatePolygonWithHoles(mesh, polygon) {
+  const outerIds = orientLoop(mesh, polygon.vertexIndices(), true);
+  const holes = polygon.holes
+    .map(holeId => mesh.polygons.get(holeId))
+    .filter(Boolean)
+    .map(hole => orientLoop(mesh, hole.vertexIndices(), false))
+    .filter(loop => loop.length >= 3);
+
+  if (!holes.length) return triangulateLoop(mesh, outerIds);
+
+  const loops = [outerIds, ...holes];
+  const vertexIds = [...new Set(loops.flat())];
+  const boundary = boundarySegments(loops);
+  const edgeKeys = new Set(boundary.map(([a, b]) => edgeKey(a, b)));
+  const edgeList = [...boundary];
+  const candidates = [];
+
+  for (let i = 0; i < vertexIds.length; ++i) {
+    for (let j = i + 1; j < vertexIds.length; ++j) {
+      const a = vertexIds[i], b = vertexIds[j];
+      if (edgeKeys.has(edgeKey(a, b))) continue;
+      if (edgeIsInsidePolygonWithHoles(mesh, a, b, outerIds, holes, boundary, vertexIds)) {
+        candidates.push([a, b, mesh.vertices.get(a).position.distanceToSq(mesh.vertices.get(b).position)]);
+      }
+    }
+  }
+
+  candidates.sort((a, b) => a[2] - b[2]);
+  for (const [a, b] of candidates) {
+    if (edgeCrossesAny(mesh, a, b, edgeList)) continue;
+    edgeKeys.add(edgeKey(a, b));
+    edgeList.push([a, b]);
+  }
+
+  const triangles = [];
+  for (let i = 0; i < vertexIds.length; ++i) {
+    for (let j = i + 1; j < vertexIds.length; ++j) {
+      for (let k = j + 1; k < vertexIds.length; ++k) {
+        const triangle = [vertexIds[i], vertexIds[j], vertexIds[k]];
+        const [a, b, c] = triangle;
+        if (!edgeKeys.has(edgeKey(a, b)) || !edgeKeys.has(edgeKey(b, c)) || !edgeKeys.has(edgeKey(a, c))) continue;
+        if (Math.abs(triangleArea(mesh, triangle)) <= MathsUtils.Epsilon) continue;
+        if (!triangleInPolygonWithHoles(mesh, triangle, outerIds, holes)) continue;
+        if (vertexIds.some(vertexId => !triangle.includes(vertexId) && pointStrictlyInTriangle(mesh.vertices.get(vertexId).position, triangle.map(id => mesh.vertices.get(id).position)))) continue;
+        triangles.push(triangleArea(mesh, triangle) > 0 ? triangle : [a, c, b]);
+      }
+    }
+  }
+
+  return triangles;
+}
+
+function edgeKey(a, b) {
+  return a < b ? `${a}:${b}` : `${b}:${a}`;
+}
+
+function edgeIsInsidePolygonWithHoles(mesh, aId, bId, outerIds, holes, boundary, vertexIds) {
+  const a = mesh.vertices.get(aId).position;
+  const b = mesh.vertices.get(bId).position;
+  const midpoint = a.lerp(b, 0.5);
+  if (!pointInPolygonWithHoles(mesh, midpoint, outerIds, holes)) return false;
+  for (const vertexId of vertexIds) {
+    if (vertexId !== aId && vertexId !== bId && pointOnSegment(mesh.vertices.get(vertexId).position, a, b)) return false;
+  }
+
+  for (const [cId, dId] of boundary) {
+    if (cId === aId || cId === bId || dId === aId || dId === bId) continue;
+    const c = mesh.vertices.get(cId).position;
+    const d = mesh.vertices.get(dId).position;
+    if (segmentsProperlyIntersect(a, b, c, d)) return false;
+  }
+  return true;
+}
+
+function edgeCrossesAny(mesh, aId, bId, edges) {
+  const a = mesh.vertices.get(aId).position;
+  const b = mesh.vertices.get(bId).position;
+  for (const [cId, dId] of edges) {
+    if (cId === aId || cId === bId || dId === aId || dId === bId) continue;
+    const c = mesh.vertices.get(cId).position;
+    const d = mesh.vertices.get(dId).position;
+    if (segmentsProperlyIntersect(a, b, c, d)) return true;
+  }
+  return false;
+}
+
+function pointOnSegment(point, a, b) {
+  if (Math.abs(b.sub(a).cross(point.sub(a))) > MathsUtils.Epsilon) return false;
+  const dot = point.sub(a).dot(point.sub(b));
+  return dot < -MathsUtils.Epsilon;
+}
+
+function pointInPolygonWithHoles(mesh, point, outerIds, holes) {
+  if (!MathsUtils.pointInPolygon(point, outerIds.map(id => mesh.vertices.get(id).position))) return false;
+  return !holes.some(holeIds => MathsUtils.pointInPolygon(point, holeIds.map(id => mesh.vertices.get(id).position)));
+}
+
+function pointStrictlyInTriangle(point, trianglePoints) {
+  const [a, b, c] = trianglePoints;
+  const area = Math.abs(b.sub(a).cross(c.sub(a)));
+  if (area <= MathsUtils.Epsilon) return false;
+  const s1 = MathsUtils.valueSign(b.sub(a).cross(point.sub(a)));
+  const s2 = MathsUtils.valueSign(c.sub(b).cross(point.sub(b)));
+  const s3 = MathsUtils.valueSign(a.sub(c).cross(point.sub(c)));
+  return (s1 > 0 && s2 > 0 && s3 > 0) || (s1 < 0 && s2 < 0 && s3 < 0);
+}
+
+function orientLoop(mesh, vertexIds, ccw) {
+  const ids = [...vertexIds];
+  const area = MathsUtils.convexPolygonArea(ids.map(id => mesh.vertices.get(id).position));
+  if ((ccw && area < 0) || (!ccw && area > 0)) ids.reverse();
+  return ids;
+}
+
+function boundarySegments(loops) {
+  const segments = [];
+  for (const loop of loops) {
+    for (let i = 0; i < loop.length; ++i) segments.push([loop[i], loop[(i + 1) % loop.length]]);
+  }
+  return segments;
+}
+
+function segmentsProperlyIntersect(a, b, c, d) {
+  const orient = (p, q, r) => Math.sign(MathsUtils.valueSign(q.sub(p).cross(r.sub(p))));
+  const o1 = orient(a, b, c), o2 = orient(a, b, d), o3 = orient(c, d, a), o4 = orient(c, d, b);
+  return o1 !== 0 && o2 !== 0 && o3 !== 0 && o4 !== 0 && o1 !== o2 && o3 !== o4;
+}
+
+function triangleArea(mesh, triangle) {
+  const [a, b, c] = triangle.map(id => mesh.vertices.get(id).position);
+  return b.sub(a).cross(c.sub(a)) / 2;
+}
+
+function triangleInPolygonWithHoles(mesh, triangle, outerIds, holes) {
+  const [a, b, c] = triangle.map(id => mesh.vertices.get(id).position);
+  const centroid = new Vector2((a.x + b.x + c.x) / 3, (a.y + b.y + c.y) / 3);
+  if (!MathsUtils.pointInPolygon(centroid, outerIds.map(id => mesh.vertices.get(id).position))) return false;
+  return !holes.some(holeIds => MathsUtils.pointInPolygon(centroid, holeIds.map(id => mesh.vertices.get(id).position)));
+}
 
 function triangulateSimplePolygon(points) {
   const n = points.length; if (n < 3) return [];

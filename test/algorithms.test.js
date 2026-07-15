@@ -96,6 +96,46 @@ test('cut polygon supports overloads', () => {
   }
 });
 
+test('triangulation subtracts polygon holes', () => {
+  const mesh = new Mesh();
+  const outer = MeshHelpers.createRectangle(mesh, new Vector2(0, 0), new Vector2(10, 10)).polygonIndex;
+  const hole = MeshHelpers.createRectangle(mesh, new Vector2(3, 3), new Vector2(7, 7)).polygonIndex;
+  mesh.addHoleToPolygon(outer, hole);
+
+  const triangles = mesh.triangulatePolygon(outer);
+  const area = triangles.reduce((sum, triangle) => {
+    const [a, b, c] = triangle.map((vertexId) => mesh.getVertex(vertexId).position);
+    return sum + Math.abs(b.sub(a).cross(c.sub(a)) / 2);
+  }, 0);
+
+  assert.equal(triangles.length, 8);
+  assert.equal(area, 84);
+  assert.equal(mesh.getPolygon(outer).pointInside(mesh, new Vector2(5, 5)), false);
+  assert.equal(mesh.getPolygon(outer).pointInside(mesh, new Vector2(1, 1)), true);
+});
+
+test('moving a hole vertex invalidates parent polygon triangulation', () => {
+  const mesh = new Mesh();
+  const outer = MeshHelpers.createRectangle(mesh, new Vector2(0, 0), new Vector2(10, 10)).polygonIndex;
+  const hole = MeshHelpers.createRectangle(mesh, new Vector2(3, 3), new Vector2(7, 7)).polygonIndex;
+  mesh.addHoleToPolygon(outer, hole);
+
+  const before = mesh.triangulatePolygon(outer).reduce((sum, triangle) => {
+    const [a, b, c] = triangle.map((vertexId) => mesh.getVertex(vertexId).position);
+    return sum + Math.abs(b.sub(a).cross(c.sub(a)) / 2);
+  }, 0);
+
+  mesh.moveVertex(mesh.getPolygon(hole).vertexIndices()[0], new Vector2(4, 4));
+
+  const after = mesh.triangulatePolygon(outer).reduce((sum, triangle) => {
+    const [a, b, c] = triangle.map((vertexId) => mesh.getVertex(vertexId).position);
+    return sum + Math.abs(b.sub(a).cross(c.sub(a)) / 2);
+  }, 0);
+
+  assert.equal(before, 84);
+  assert.equal(after, 88);
+});
+
 test('bridge edge chains creates one bridge polygon with interpolation options', () => {
   const mesh = new Mesh();
   const left = MeshHelpers.createRectangle(mesh, new Vector2(-4, -2), new Vector2(-2, 2));
