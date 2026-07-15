@@ -13,7 +13,7 @@ This repository currently contains:
 
 ### Requirements
 
-- Node.js 22 is recommended. The GitHub Actions workflow uses Node 22.
+- Node.js 24 is recommended. The GitHub Actions workflow uses Node 24.
 - npm.
 
 ### Install
@@ -88,7 +88,7 @@ The workflow is defined at:
 It runs on pushes to `main` and can also be triggered manually. It:
 
 1. Checks out the repo.
-2. Sets up Node.js 22.
+2. Sets up Node.js 24.
 3. Installs editor dependencies with `npm ci`.
 4. Runs root tests with `npm test`.
 5. Builds the editor UI.
