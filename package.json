@@ -1,0 +1,13 @@
+{
+  "name": "@willpower/geometry",
+  "version": "0.1.0",
+  "description": "Pure JavaScript port of Willpower geometry primitives and mesh topology utilities.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": "./src/index.js",
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": ["geometry", "mesh", "willpower"],
+  "license": "UNLICENSED"
+}
