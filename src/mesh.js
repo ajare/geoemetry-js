@@ -31,6 +31,18 @@ export class Mesh {
   off(id) { this.callbacks.delete(id); return this; }
 
   addVertex(position) { const id = this._nextVertexId++; const v = position instanceof Vertex ? position.clone() : new Vertex(Vector2.from(position), id); v.id = v.publicId = v.attributeIndex = id; this.vertices.set(id, v); this._emit('vertexAdded', { id, vertex: v }); return id; }
+  // Recreate a vertex under a caller-supplied id. Used by deserialization so a
+  // round trip preserves the ids a file was written with; falls back to a fresh
+  // id when the requested one is unusable.
+  addVertexWithId(id, position) {
+    if (!Number.isInteger(id) || id < 0 || this.vertices.has(id)) return this.addVertex(position);
+    const v = position instanceof Vertex ? position.clone() : new Vertex(Vector2.from(position), id);
+    v.id = v.publicId = v.attributeIndex = id;
+    this.vertices.set(id, v);
+    if (id >= this._nextVertexId) this._nextVertexId = id + 1;
+    this._emit('vertexAdded', { id, vertex: v });
+    return id;
+  }
   getVertex(id) { return this.vertices.get(id); }
   get numVertices() { return this.vertices.size; }
   getNumVertices() { return this.vertices.size; }
@@ -42,6 +54,23 @@ export class Mesh {
 
   findEdge(v0, v1) { return this._edgeLookup.get(this._edgeKey(v0, v1)); }
   addEdge(v0, v1) { if (v0 instanceof Edge) [v0, v1] = v0.vertices; const existing = this.findEdge(v0, v1); if (existing !== undefined) return existing; if (!this.vertices.has(v0) || !this.vertices.has(v1)) throw new GeometryError('Cannot create edge with missing vertex'); const id = this._nextEdgeId++; const e = new Edge(v0, v1, id).update(this); this.edges.set(id, e); this._edgeLookup.set(this._edgeKey(v0, v1), id); this.vertices.get(v0).edges.add(id); this.vertices.get(v1).edges.add(id); this._emit('edgeAdded', { id, edge: e }); return id; }
+  // As addEdge(), but under a caller-supplied id. An edge that already joins
+  // v0/v1 always wins, so this stays safe to call before addPolygon().
+  addEdgeWithId(id, v0, v1) {
+    if (v0 instanceof Edge) [v0, v1] = v0.vertices;
+    const existing = this.findEdge(v0, v1);
+    if (existing !== undefined) return existing;
+    if (!Number.isInteger(id) || id < 0 || this.edges.has(id)) return this.addEdge(v0, v1);
+    if (!this.vertices.has(v0) || !this.vertices.has(v1)) throw new GeometryError('Cannot create edge with missing vertex');
+    const e = new Edge(v0, v1, id).update(this);
+    this.edges.set(id, e);
+    this._edgeLookup.set(this._edgeKey(v0, v1), id);
+    this.vertices.get(v0).edges.add(id);
+    this.vertices.get(v1).edges.add(id);
+    if (id >= this._nextEdgeId) this._nextEdgeId = id + 1;
+    this._emit('edgeAdded', { id, edge: e });
+    return id;
+  }
   getEdge(id) { return this.edges.get(id); }
   getNumEdges() { return this.edges.size; }
   getFirstEdgeIndex() { return this.edges.keys().next().value ?? null; }
@@ -142,7 +171,10 @@ export class Mesh {
     return true;
   }
 
-  addPolygon(pointsOrVertexIds) {
+  addPolygon(pointsOrVertexIds) { return this._createPolygon(pointsOrVertexIds, null); }
+  // As addPolygon(), but under a caller-supplied id (deserialization).
+  addPolygonWithId(id, pointsOrVertexIds) { return this._createPolygon(pointsOrVertexIds, id); }
+  _createPolygon(pointsOrVertexIds, forcedId) {
     const vertexIds = pointsOrVertexIds.map(p => Number.isInteger(p) ? p : this.addVertex(p));
     if (vertexIds.length < 3) throw new GeometryError('A polygon requires at least three vertices');
     const directed = [];
@@ -151,7 +183,9 @@ export class Mesh {
       const edgeId = this.addEdge(v0, v1);
       directed.push(new DirectedEdge(edgeId, v0, v1));
     }
-    const id = this._nextPolygonId++;
+    const usable = Number.isInteger(forcedId) && forcedId >= 0 && !this.polygons.has(forcedId);
+    const id = usable ? forcedId : this._nextPolygonId++;
+    if (id >= this._nextPolygonId) this._nextPolygonId = id + 1;
     const p = new Polygon(directed, id);
     this.polygons.set(id, p);
     for (const de of directed) this.edges.get(de.edge).polygons.add(id);

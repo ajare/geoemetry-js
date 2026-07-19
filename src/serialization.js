@@ -3,18 +3,31 @@ import { Vector2 } from './vector2.js';
 
 export class SerializerMeshChunk {
   static toJSON(mesh) { return mesh.toJSON(); }
+  // Rebuild a mesh from toJSON() output. Ids are preserved wherever the file
+  // supplies usable ones, so a round trip is identity-stable and callers can
+  // keep referring to vertices/edges/polygons by the ids they saw before
+  // saving. Edges are recreated up front (with their attributes) so that the
+  // addEdge() calls inside polygon creation find and reuse them rather than
+  // minting fresh ids -- without this, edge attributes and edge ids are both
+  // lost, since edges otherwise only exist as a side effect of addPolygon().
   static fromJSON(data) {
     const mesh = new Mesh();
     const vertexMap = new Map();
     for (const v of data.vertices ?? []) {
-      const nid = mesh.addVertex(new Vector2(v.position));
+      const nid = mesh.addVertexWithId(v.id, new Vector2(v.position));
       mesh.getVertex(nid).attributes = { ...(v.attributes ?? {}) };
       vertexMap.set(v.id, nid);
+    }
+    for (const e of data.edges ?? []) {
+      const [a, b] = (e.vertices ?? []).map(v => vertexMap.get(v));
+      if (a === undefined || b === undefined) continue;
+      const eid = mesh.addEdgeWithId(e.id, a, b);
+      mesh.getEdge(eid).attributes = { ...(e.attributes ?? {}) };
     }
     const polygonMap = new Map();
     for (const p of data.polygons ?? []) {
       const ids = p.edges.map(de => vertexMap.get(de.v0));
-      const pid = mesh.addPolygon(ids);
+      const pid = mesh.addPolygonWithId(p.id, ids);
       mesh.getPolygon(pid).attributes = { ...(p.attributes ?? {}) };
       if (p.hole) mesh.getPolygon(pid).convertToHole();
       polygonMap.set(p.id, pid);
