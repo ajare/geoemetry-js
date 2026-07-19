@@ -218,10 +218,18 @@ dd { margin: 0; color: #e2e8f0; font-weight: 700; }
   user-select: none;
 }
 
+/* Below: stroke-width is in mesh units (no vector-effect: non-scaling-stroke),
+ * so it scales with the viewBox like any other geometry. main.jsx's VIEW_SIZE
+ * zoomed the default view in 8x (640 -> 80 mesh units across); these were
+ * divided by the same 8x so lines read the same thickness on screen as
+ * before, rather than every edge suddenly looking 8x heavier. Rules that
+ * already declare non-scaling-stroke (mesh-fill.selected/.hole, .axis,
+ * .split-preview/.insert-preview, .insert-point) render in screen pixels
+ * regardless of zoom and were already unaffected -- left alone. */
 .mesh-fill {
   fill: rgba(59, 130, 246, 0.18);
   stroke: transparent;
-  stroke-width: 2;
+  stroke-width: 0.25;
   cursor: pointer;
 }
 
@@ -251,8 +259,8 @@ dd { margin: 0; color: #e2e8f0; font-weight: 700; }
 .triangle {
   fill: rgba(34, 197, 94, 0.12);
   stroke: rgba(34, 197, 94, 0.55);
-  stroke-width: 1.5;
-  stroke-dasharray: 7 5;
+  stroke-width: 0.1875;
+  stroke-dasharray: 0.875 0.625;
 }
 
 .axis {
@@ -264,41 +272,45 @@ dd { margin: 0; color: #e2e8f0; font-weight: 700; }
 .x-axis { stroke: #ef4444; }
 .y-axis { stroke: #22c55e; }
 
+/* font-size and stroke-width here are unitless/px but still fall inside the
+ * SVG's viewBox coordinate system (no counter-scale on the <text>), so text
+ * scales with the same 8x zoom-in as everything else above -- shrunk to
+ * match, same reasoning as the block above. */
 .axis-label,
 .origin-label {
   fill: #e6edf3;
-  font-size: 14px;
+  font-size: 1.75px;
   font-weight: 900;
   paint-order: stroke;
   stroke: #0d1117;
-  stroke-width: 4;
+  stroke-width: 0.5;
 }
 
 .origin-label {
   fill: #facc15;
-  font-size: 12px;
+  font-size: 1.5px;
 }
 
 .edge {
   stroke: #60a5fa;
-  stroke-width: 4;
+  stroke-width: 0.5;
   stroke-linecap: round;
   cursor: copy;
 }
 
 .edge:hover {
   stroke: #93c5fd;
-  stroke-width: 6;
+  stroke-width: 0.75;
 }
 
 .edge.selected {
   stroke: #facc15;
-  stroke-width: 7;
+  stroke-width: 0.875;
 }
 
 .edge.hover-target {
   stroke: #a78bfa;
-  stroke-width: 8;
+  stroke-width: 1;
   filter: drop-shadow(0 0 8px rgba(167, 139, 250, 0.9));
 }
 
@@ -337,7 +349,7 @@ dd { margin: 0; color: #e2e8f0; font-weight: 700; }
 .handle {
   fill: #f97316;
   stroke: #fff7ed;
-  stroke-width: 3;
+  stroke-width: 0.375;
   cursor: grab;
 }
 .handle.selected {
@@ -348,7 +360,7 @@ dd { margin: 0; color: #e2e8f0; font-weight: 700; }
 .handle.hover-target {
   fill: #a78bfa;
   stroke: #f5f3ff;
-  stroke-width: 5;
+  stroke-width: 0.625;
   filter: drop-shadow(0 0 8px rgba(167, 139, 250, 0.9));
 }
 
@@ -359,11 +371,11 @@ dd { margin: 0; color: #e2e8f0; font-weight: 700; }
 
 .label {
   fill: #f8fafc;
-  font-size: 15px;
+  font-size: 1.875px;
   font-weight: 800;
   paint-order: stroke;
   stroke: #0d1117;
-  stroke-width: 4;
+  stroke-width: 0.5;
 }
 
 @media (max-width: 840px) {

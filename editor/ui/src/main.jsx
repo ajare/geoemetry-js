@@ -8,8 +8,16 @@ styleElement.dataset.source = 'react-square-mesh-styles';
 styleElement.textContent = styles;
 document.head.appendChild(styleElement);
 
-const VIEW_SIZE = 640;
-const DEFAULT_VERTEX_SIZE = 6;
+// The viewport spans VIEW_SIZE mesh units on the shorter axis. Keep this in
+// the same ~0.4x ratio to the default square's side (see createSquareMesh)
+// that it was at the previous 280-unit default, so the starting view is
+// zoomed in to fit the new, smaller square rather than shrinking it to a
+// speck in what used to be a good fit for a much bigger shape.
+const VIEW_SIZE = 80;
+// Vertex handles are drawn with radius `vertexSize` in the same mesh-unit
+// coordinate system as the viewBox, so shrinking VIEW_SIZE 8x (640 -> 80)
+// made every handle 8x bigger on screen unless this shrinks with it.
+const DEFAULT_VERTEX_SIZE = 0.75;
 const CLICK_DRAG_THRESHOLD = 4;
 
 function useViewportBox() {
@@ -36,7 +44,7 @@ function useViewportBox() {
 
 function createSquareMesh() {
   const mesh = new Mesh();
-  const result = MeshHelpers.createRectangle(mesh, new Vector2(-140, -140), new Vector2(140, 140));
+  const result = MeshHelpers.createRectangle(mesh, new Vector2(-16, -16), new Vector2(16, 16));
   return { mesh, polygonId: result.polygonIndex };
 }
 
@@ -79,7 +87,7 @@ function SquareMeshEditor() {
   const [extrudeVertexDialogPosition, setExtrudeVertexDialogPosition] = useState(null);
   const [extrudeVertexDialogDrag, setExtrudeVertexDialogDrag] = useState(null);
   const [extrudeVertexOptions, setExtrudeVertexOptions] = useState({ type: 'Round', distance: 24, outwards: true, squareThreshold: 3, segments: 8 });
-  const [gridSize, setGridSize] = useState(32);
+  const [gridSize, setGridSize] = useState(16);
   const [snapToGrid, setSnapToGrid] = useState(false);
   const [showVertices, setShowVertices] = useState(true);
   const [showTriangulation, setShowTriangulation] = useState(true);
@@ -1764,15 +1772,19 @@ function SquareMeshEditor() {
       >
         <defs>
           <pattern id="grid" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse">
-            <path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="#283044" strokeWidth="1" />
+            {/* strokeWidth is in mesh units like everything below it, so it
+                shrinks with VIEW_SIZE's 8x zoom-in to stay a hairline. */}
+            <path d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} fill="none" stroke="#283044" strokeWidth="0.125" />
           </pattern>
         </defs>
         <rect x={viewBox.x} y={viewBox.y} width={viewBox.width} height={viewBox.height} fill="url(#grid)" />
         <line x1={viewBox.x} y1="0" x2={viewBox.x + viewBox.width} y2="0" className="axis x-axis" />
         <line x1="0" y1={viewBox.y} x2="0" y2={viewBox.y + viewBox.height} className="axis y-axis" />
-        <text x={viewBox.x + 12} y="-10" className="axis-label">X</text>
-        <text x="10" y={viewBox.y + 22} className="axis-label">Y</text>
-        <text x="10" y="-10" className="origin-label">0,0</text>
+        {/* Offsets are mesh units too, scaled 8x down with everything else so
+            these sit the same relative distance from the axes as before. */}
+        <text x={viewBox.x + 1.5} y="-1.25" className="axis-label">X</text>
+        <text x="1.25" y={viewBox.y + 2.75} className="axis-label">Y</text>
+        <text x="1.25" y="-1.25" className="origin-label">0,0</text>
 
         {insertMode && insertPoints.length > 0 && (
           <>
@@ -1891,7 +1903,9 @@ function SquareMeshEditor() {
               }}
             />
             {showVertexLabels && (
-              <text x={position.x + vertexSize + 4} y={-position.y - vertexSize - 4} className="label">v{id}</text>
+              // The +4 gap (mesh units) is scaled down with everything else so the
+              // label sits the same relative distance from its vertex as before.
+              <text x={position.x + vertexSize + 0.5} y={-position.y - vertexSize - 0.5} className="label">v{id}</text>
             )}
           </g>
         ))}
