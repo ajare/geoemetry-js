@@ -85,8 +85,15 @@ function SquareMeshEditor() {
   const [showTriangulation, setShowTriangulation] = useState(true);
   const [vertexSize, setVertexSize] = useState(DEFAULT_VERTEX_SIZE);
   const [showVertexLabels, setShowVertexLabels] = useState(false);
+  const [copyStatus, setCopyStatus] = useState('idle');   // idle | copied | failed
   const importInputRef = useRef(null);
+  const copyResetRef = useRef(null);
   const viewBox = useViewportBox();
+
+  // Copying leaves no visible trace, so the button reports its own outcome for
+  // a moment. Clear the pending reset on unmount, and on every fresh copy, so
+  // a quick second click can't be blanked by the first click's timer.
+  useEffect(() => () => clearTimeout(copyResetRef.current), []);
 
   const selectedEdgeGroups = useMemo(() => {
     const remaining = new Set(selectedEdges.filter((id) => mesh.getEdge(id)));
@@ -1151,6 +1158,34 @@ function SquareMeshEditor() {
     URL.revokeObjectURL(url);
   }
 
+  async function copyJson() {
+    const json = JSON.stringify(SerializerMeshChunk.toJSON(mesh), null, 2);
+    let ok = false;
+    try {
+      // navigator.clipboard needs a secure context; on plain http:// it is
+      // simply absent, so fall back to a throwaway textarea + execCommand.
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(json);
+        ok = true;
+      } else {
+        const scratch = document.createElement('textarea');
+        scratch.value = json;
+        scratch.setAttribute('readonly', '');
+        scratch.style.position = 'fixed';
+        scratch.style.opacity = '0';
+        document.body.appendChild(scratch);
+        scratch.select();
+        ok = document.execCommand('copy');
+        document.body.removeChild(scratch);
+      }
+    } catch (error) {
+      console.error('Failed to copy mesh JSON', error);
+    }
+    setCopyStatus(ok ? 'copied' : 'failed');
+    clearTimeout(copyResetRef.current);
+    copyResetRef.current = setTimeout(() => setCopyStatus('idle'), 1500);
+  }
+
   function importJson() {
     importInputRef.current?.click();
   }
@@ -1194,6 +1229,13 @@ function SquareMeshEditor() {
           <button type="button" onClick={exportJson}>Export JSON</button>
           <button type="button" onClick={importJson}>Import JSON</button>
         </div>
+        <button
+          type="button"
+          onClick={copyJson}
+          title="Copy the exported mesh JSON to the clipboard"
+        >
+          {copyStatus === 'copied' ? 'Copied!' : copyStatus === 'failed' ? 'Copy failed' : 'Copy JSON'}
+        </button>
         <input
           ref={importInputRef}
           type="file"
